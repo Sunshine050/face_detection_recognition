@@ -1,55 +1,57 @@
-import face_recognition
+import cv2
 import pickle
+import os
 
-# Path ของไฟล์ที่เราเทรนไว้
-ENCODINGS_PATH = "models/encodings.pickle"
+MODEL_PATH = "models/lbph_model.yml"
+NAMES_PATH = "models/lbph_names.pickle"
 
-# 1. โหลดฐานข้อมูล encodings (ทำครั้งเดียวตอนเริ่ม)
-print("[INFO] กำลังโหลด encodings...")
-try:
-    with open(ENCODINGS_PATH, 'rb') as f:
-        data = pickle.load(f)
-except FileNotFoundError:
-    print(f"[ERROR] ไม่พบไฟล์ {ENCODINGS_PATH}")
-    print("กรุณารัน train_model.py ก่อน")
-    data = {"encodings": [], "names": []}
-
-def recognize_faces(rgb_face_image, face_locations):
-    """
-    รับภาพ RGB และพิกัดใบหน้าที่ 'ตรวจพบ' เข้ามา
-    คืนค่า list ของ 'ชื่อ' ที่ระบุตัวตนได้
-    """
-    if not data["encodings"]:
-        return ["Unknown"] * len(face_locations) # ถ้าไม่มีฐานข้อมูล ก็คืน Unknown
-
-    # 1. สร้าง encodings (ลายนิ้วมือ) จากใบหน้าที่เพิ่งเจอสดๆ
-    # สังเกตว่าเราใช้ face_locations (พิกัด) ที่ได้จาก 'detector' ของคุณ
-    # แต่เราต้องคำนวณ encoding จาก 'recognizer' เพื่อให้ได้ค่าที่แม่นยำ
-    current_encodings = face_recognition.face_encodings(rgb_face_image, face_locations)
+# ตรวจสอบว่ามีไฟล์โมเดลที่เทรนไว้หรือไม่
+if not os.path.exists(MODEL_PATH) or not os.path.exists(NAMES_PATH):
+    print("[ERROR] ไม่พบโมเดล LBPH (lbph_model.yml) หรือ (lbph_names.pickle)")
+    print("กรุณารัน train_model.py ก่อน!")
+    recognizer = None
+    id_to_name_map = {}
+else:
+    # โหลดโมเดล LBPH 
+    print("[INFO] กำลังโหลดโมเดล LBPH...")
+    recognizer = cv2.face.LBPHFaceRecognizer_create()
+    recognizer.read(MODEL_PATH)
     
+    with open(NAMES_PATH, 'rb') as f:
+        id_to_name_map = pickle.load(f)
+    print("[INFO] โหลดโมเดล LBPH สำเร็จ")
+
+
+def recognize_faces_lbph(frame, face_boxes):
     names = []
+    confidences = []
 
-    # 2. วนลูปใน encodings ที่เพิ่งเจอ
-    for encoding in current_encodings:
-        # 3. เปรียบเทียบกับฐานข้อมูล (knownEncodings)
-        # tolerance คือค่ายิ่งน้อยยิ่งเข้มงวด (0.6 คือค่ามาตรฐาน)
-        matches = face_recognition.compare_faces(data["encodings"], encoding, tolerance=0.6)
-        name = "Unknown" # ตั้งค่าเริ่มต้น
+    #ถ้าไม่มีโมเดล (เทรนไม่ผ่าน) ให้คืน Unknown
+    if recognizer is None:
+        return ["Unknown"] * len(face_boxes), [0.0] * len(face_boxes)
 
-        # 4. ตรวจสอบว่ามีใบหน้าที่ 'ตรงกัน' หรือไม่
-        if True in matches:
-            # หากตรงกัน ให้หาว่าตรงกับใครมากที่สุด
-            matchedIdxs = [i for (i, b) in enumerate(matches) if b]
-            counts = {}
 
-            # นับว่าตรงกับชื่อไหนกี่ครั้ง
-            for i in matchedIdxs:
-                name = data["names"][i]
-                counts[name] = counts.get(name, 0) + 1
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-            # เลือกชื่อที่ถูกโหวต (match) มากที่สุด
-            name = max(counts, key=counts.get)
+    
+    for (x, y, w, h) in face_boxes:
         
-        names.append(name)
         
-    return names
+        face_roi = gray_frame[y:y+h, x:x+w]
+        
+        try:
+            label_id, confidence = recognizer.predict(face_roi)
+           
+            if confidence < 140: 
+                name = id_to_name_map.get(label_id, "Unknown")
+            else:
+                name = "Unknown"
+                
+            names.append(name)
+            confidences.append(confidence) 
+
+        except cv2.error:
+            names.append("Error")
+            confidences.append(0)
+            
+    return names, confidences

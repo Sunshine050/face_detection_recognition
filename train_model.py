@@ -1,64 +1,91 @@
-import face_recognition
-import pickle
-import os
 import cv2
+import os
+import numpy as np
+import pickle
+
+PROTOTXT_PATH = "models/deploy.prototxt.txt"
+MODEL_PATH = "models/res10_300x300_ssd_iter_140000.caffemodel"
+net = cv2.dnn.readNetFromCaffe(PROTOTXT_PATH, MODEL_PATH)
+MIN_CONFIDENCE = 0.5
+# --------------------------------
 
 DATASET_PATH = "dataset"
-ENCODINGS_PATH = "models/encodings.pickle"
+MODEL_PATH = "models/lbph_model.yml" 
+NAMES_PATH = "models/lbph_names.pickle" 
 
-print("[INFO] กำลังเริ่มประมวลผลใบหน้าจาก dataset...")
-knownEncodings = []
-knownNames = []
+recognizer = cv2.face.LBPHFaceRecognizer_create()
 
-# วนลูปเข้าไปในแต่ละโฟลเดอร์ย่อย (ชื่อคน) ใน dataset
-for person_name in os.listdir(DATASET_PATH):
-    person_folder_path = os.path.join(DATASET_PATH, person_name)
+def get_images_and_labels():
+    image_paths = []
+    for root, dirs, files in os.walk(DATASET_PATH):
+        for file in files:
+            if file.endswith((".png", ".jpg", ".jpeg")):
+                image_paths.append(os.path.join(root, file))
 
-    # ตรวจสอบว่าเป็นโฟลเดอร์หรือไม่
-    if not os.path.isdir(person_folder_path):
-        continue
+    face_samples = [] 
+    labels = []       
+    name_map = {}     
+    current_id = 0
 
-    print(f"[INFO] กำลังประมวลผล {person_name}...")
+    print(f"[INFO] กำลังประมวลผลรูปภาพทั้งหมด {len(image_paths)} รูป...")
 
-    # วนลูปในไฟล์รูปภาพของคนๆ นั้น
-    for image_name in os.listdir(person_folder_path):
-        image_path = os.path.join(person_folder_path, image_name)
+    for image_path in image_paths:
+        person_name = os.path.basename(os.path.dirname(image_path))
+
+        if person_name not in name_map:
+            name_map[person_name] = current_id
+            current_id += 1
         
-        # --- START FIX (เพิ่ม try...except) ---
-        # เราจะพยายามอ่านและประมวลผล
-        # ถ้าไฟล์ไหนมีปัญหา (เช่น เป็น Grayscale, RGBA, Thumbs.db) มันจะโดดไปที่ except
-        try:
-            # อ่านรูปภาพด้วย OpenCV
-            image = cv2.imread(image_path)
+        label_id = name_map[person_name]
+
+        image = cv2.imread(image_path)
+        if image is None:
+            print(f"[Warning] ข้ามไฟล์ (อ่านไม่ได้): {image_path}")
+            continue
+
+        (h, w) = image.shape[:2]
+        blob = cv2.dnn.blobFromImage(cv2.resize(image, (300, 300)), 1.0,
+            (300, 300), (104.0, 177.0, 123.0))
+        net.setInput(blob)
+        detections = net.forward()
+
+        best_face_box = None
+        best_confidence = 0.0
+        for i in range(0, detections.shape[2]):
+            confidence = detections[0, 0, i, 2]
+            if confidence > MIN_CONFIDENCE and confidence > best_confidence:
+                best_confidence = confidence
+                box = detections[0, 0, i, 3:7] * [w, h, w, h]
+                best_face_box = box.astype("int")
+
+        if best_face_box is not None:
+            (startX, startY, endX, endY) = best_face_box
             
-            # เช็คว่าอ่านไฟล์ได้หรือไม่ (กันไฟล์ขยะ Thumbs.db)
-            if image is None:
-                print(f"[Warning] ข้ามไฟล์ {image_path} (อ่านไม่ได้ หรือไม่ใช่รูปภาพ)")
-                continue
+            face_roi = image[startY:endY, startX:endX]
+            gray_face = cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
+            
+            face_samples.append(gray_face)
+            labels.append(label_id)
+            print(f"    [Success] เพิ่มใบหน้า {person_name} (ID: {label_id}) จาก {os.path.basename(image_path)}")
+        else:
+            print(f"[Warning] ไม่พบใบหน้าใน: {image_path}")
 
-            # แปลงจาก BGR (OpenCV) เป็น RGB (face_recognition)
-            rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    return face_samples, labels, name_map
 
-            # 1. ค้นหาใบหน้าในรูป
-            boxes = face_recognition.face_locations(rgb, model="hog")
+print("[INFO] กำลังเตรียมข้อมูล...")
+faces, ids, name_map = get_images_and_labels()
 
-            # 2. สร้าง encodings (ลายนิ้วมือ) จากใบหน้าที่เจอ
-            encodings = face_recognition.face_encodings(rgb, boxes)
+if len(faces) == 0:
+    print("[ERROR] ไม่พบใบหน้าดีๆ ใน dataset เลย! กรุณาเพิ่มรูป .jpg ที่ชัดเจน")
+else:
+    print("[INFO] กำลังเทรนโมเดล LBPH...")
+    recognizer.train(faces, np.array(ids))
 
-            # 3. เก็บ encodings พร้อมชื่อ
-            for encoding in encodings:
-                knownEncodings.append(encoding)
-                knownNames.append(person_name)
-                
-        except Exception as e:
-            # ถ้าเกิด Error ใดๆ กับไฟล์นี้ ให้พิมพ์เตือนและข้ามไปไฟล์ถัดไป
-            print(f"[Warning] ข้ามไฟล์ {image_path} (เกิดปัญหา: {e})")
-        # --- END FIX ---
-
-# 4. บันทึก encodings และ names ทั้งหมดลงไฟล์ pickle
-print("[INFO] กำลังบันทึก encodings ลงไฟล์...")
-data = {"encodings": knownEncodings, "names": knownNames}
-with open(ENCODINGS_PATH, "wb") as f:
-    f.write(pickle.dumps(data))
-
-print("[INFO] เสร็จสิ้นการเทรนโมเดล")
+    #  บันทึกโมเดล
+    recognizer.save(MODEL_PATH)
+    print(f"[INFO] บันทึกโมเดล LBPH ไปที่ {MODEL_PATH}")
+    id_to_name_map = {v: k for k, v in name_map.items()}
+    with open(NAMES_PATH, 'wb') as f:
+        f.write(pickle.dumps(id_to_name_map))
+    print(f"[INFO] บันทึกชื่อไปที่ {NAMES_PATH}")
+    print("[INFO] เสร็จสิ้นการเทรน!")
