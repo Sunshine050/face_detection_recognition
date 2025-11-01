@@ -4,7 +4,6 @@ import numpy as np
 import pickle
 import sys
 
-# --- การจัดการพาธโมเดล DNN/SSD (ใช้ Path แบบสัมพัทธ์ได้เพราะรันจากโฟลเดอร์หลัก) ---
 PROTOTXT_PATH = "models/deploy.prototxt.txt"
 MODEL_PATH = "models/res10_300x300_ssd_iter_140000.caffemodel"
 
@@ -18,7 +17,6 @@ except Exception as e:
 # --------------------------------
 
 # --- การจัดการพาธสำหรับการเทรนและการบันทึก ---
-# กำหนดพาธโดยอ้างอิงจากตำแหน่งที่ train_model.py ถูกรัน (สมมติว่าเป็นโฟลเดอร์หลัก)
 DATASET_PATH = os.path.join(os.getcwd(), "dataset")
 MODEL_SAVE_PATH = os.path.join(os.getcwd(), "models", "lbph_model.yml") 
 NAMES_SAVE_PATH = os.path.join(os.getcwd(), "models", "lbph_names.pickle") 
@@ -38,9 +36,6 @@ def get_images_and_labels():
             if file.lower().endswith((".png", ".jpg", ".jpeg")): 
                 image_paths.append(os.path.join(root, file))
 
-    # ************************************************
-    # *** โค้ดส่วนนี้ถูกแก้ไขการเยื้องบรรทัดแล้ว ***
-    # ************************************************
     face_samples = [] 
     labels = []       
     name_map = {}     

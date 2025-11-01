@@ -60,7 +60,6 @@ def recognize_faces_lbph(frame, face_boxes):
             continue
 
         try:
-            # ต้องมั่นใจว่าภาพมีขนาดที่ถูกต้องก่อน predict
             # LBPH ต้องการภาพขนาดเท่าเดิมที่ใช้ตอนเทรน (แต่ปกติจะปรับเอง)
             label_id, confidence = recognizer.predict(face_roi)
            
