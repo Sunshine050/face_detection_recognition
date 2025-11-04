@@ -4,17 +4,38 @@ from PIL import Image, ImageTk
 import cv2
 import time
 import numpy as np
-import os # ต้องมี os สำหรับการจัดการพาธในโมดูลย่อย
+import os 
 import sys
 
+# --- (START) การจัดการพาธให้เข้าถึง core modules ---
+# เพิ่ม sys.path เพื่อให้แน่ใจว่ามันหา 'core' เจอ (เช่น detector.py)
+try:
+    BASE_DIR = os.getcwd()
+except Exception as e:
+    print(f"[ERROR] Cannot get Current Working Directory: {e}", file=sys.stderr)
+    sys.exit(1)
+
+CORE_PATH = os.path.join(BASE_DIR, "core")
+if CORE_PATH not in sys.path:
+    sys.path.append(CORE_PATH)
+# --- (END) การจัดการพาธ ---
+
 # นำเข้าฟังก์ชันจากไฟล์อื่น ๆ ในโปรเจกต์
-from core.detector import detect_faces 
-from core.recognizer import recognize_faces_lbph
+try:
+    # ต้อง import จาก 'detector' และ 'recognizer' ที่อยู่ในโฟลเดอร์ core/
+    from detector import detect_faces 
+    from recognizer import recognize_faces_lbph # ใช้ฟังก์ชัน recognize_faces_lbph
+except ImportError:
+    # พิมพ์คำเตือนหากหาไฟล์ไม่เจอ
+    print("[ERROR] ไม่สามารถ import 'core' modules ได้", file=sys.stderr)
+    print(f"  > กำลังค้นหาที่: {CORE_PATH}", file=sys.stderr)
+    print("  > กรุณาตรวจสอบว่ามีไฟล์ detector.py และ recognizer.py ในโฟลเดอร์ core/", file=sys.stderr)
+    sys.exit(1)
 
 # --- ค่าคงที่/การตั้งค่า ---
 APP_TITLE = "Face Recognition Application (GUI)"
-CAMERA_ID = 0 # ID กล้องหลัก
-UPDATE_DELAY_MS = 15 # ความถี่ในการอัปเดตเฟรมสำหรับกล้อง
+CAMERA_ID = 0 
+UPDATE_DELAY_MS = 15 
 
 class FaceRecognitionApp:
     def __init__(self, master):
@@ -25,14 +46,15 @@ class FaceRecognitionApp:
         self.cap = None 
         self.is_running_camera = False
         self.prev_frame_time = time.time()
+        self._after_id = None 
 
         # 2. สร้าง Main Frame
         main_frame = tk.Frame(master)
         main_frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
 
-        # 3. พื้นที่แสดงผลภาพ/วิดีโอ (Label จะขยายตามพื้นที่ที่มี)
+        # 3. พื้นที่แสดงผลภาพ/วิดีโอ 
         self.video_label = tk.Label(main_frame, text="Select an option to start.", 
-                                    bg='black', fg='white', relief=tk.RAISED)
+                                      bg='black', fg='white', relief=tk.RAISED)
         self.video_label.pack(side=tk.LEFT, padx=10, fill=tk.BOTH, expand=True)
         
         # 4. Control Panel (ปุ่มต่าง ๆ)
@@ -54,6 +76,9 @@ class FaceRecognitionApp:
         # Label แสดงสถานะ
         self.status_label = tk.Label(control_frame, text="Status: Ready", fg="blue", wraplength=150)
         self.status_label.pack(pady=20, fill=tk.X)
+        
+        # ผูกฟังก์ชัน On Close
+        master.protocol("WM_DELETE_WINDOW", self.on_close)
 
     # --- ฟังก์ชันควบคุม ---
 
@@ -73,7 +98,7 @@ class FaceRecognitionApp:
         self.btn_upload.config(state=tk.DISABLED)
         self.status_label.config(text="Status: Camera Running...", fg="green")
         self.prev_frame_time = time.time()
-        self.update_frame() # เริ่ม loop อัปเดตเฟรม
+        self.update_frame() 
 
     def stop_camera(self):
         """หยุดการทำงานของกล้อง"""
@@ -85,8 +110,10 @@ class FaceRecognitionApp:
         self.btn_stop.config(state=tk.DISABLED)
         self.btn_upload.config(state=tk.NORMAL)
         self.status_label.config(text="Status: Camera Stopped", fg="blue")
-        # ยกเลิกการเรียก update_frame ซ้ำ
-        self.master.after_cancel(self._after_id) 
+        
+        if self._after_id:
+            self.master.after_cancel(self._after_id) 
+            self._after_id = None
 
     def upload_image(self):
         """อนุญาตให้ผู้ใช้อัปโหลดไฟล์ภาพเพื่อประมวลผล"""
@@ -117,14 +144,14 @@ class FaceRecognitionApp:
     def _process_frame(self, frame, is_camera=True):
         """ฟังก์ชันหลักในการตรวจจับและจดจำใบหน้า พร้อมแสดงผลใน Terminal"""
         
-        # กลับภาพเฉพาะตอนใช้กล้องเท่านั้น
         if is_camera:
             frame = cv2.flip(frame, 1) 
         
+        # 1. ตรวจจับใบหน้า
         detected_results = detect_faces(frame)
         boxes = [box for (box, conf) in detected_results]
         
-        # ถ้าตรวจพบใบหน้า ให้ทำการจดจำ
+        # 2. จดจำใบหน้า
         if boxes:
             names, lbph_confidences = recognize_faces_lbph(frame, boxes)
         else:
@@ -132,18 +159,17 @@ class FaceRecognitionApp:
             lbph_confidences = []
 
         
-        # --- แสดงผลใน Terminal ---
+        # --- แสดงผลใน Terminal (สำหรับ Debug) ---
         if names:
             print("\n--- Detection Results ---")
             for i in range(len(names)):
                 name = names[i]
                 conf = lbph_confidences[i]
-                # LBPH ค่า Confidence ยิ่งต่ำยิ่งดี (0 คือตรงเป๊ะ)
                 match_status = f"Match: {conf:.2f}" 
                 if name != "Unknown":
-                     print(f"✅ Found: {name} | Confidence (Lower is better): {conf:.2f}")
+                    print(f"✅ Found: {name} | Confidence (Lower is better): {conf:.2f}")
                 else:
-                     print(f"❓ Unknown | Confidence: {conf:.2f}")
+                    print(f"❓ Unknown | Confidence: {conf:.2f}")
             print("-------------------------")
         
         # --- วาดผลลัพธ์ลงบนภาพ ---
@@ -168,35 +194,27 @@ class FaceRecognitionApp:
     def _display_frame(self, frame):
         """แปลงและแสดงเฟรมภาพใน Tkinter Label พร้อมปรับขนาด"""
         
-        # 1. แปลง BGR (OpenCV) เป็น RGB
         cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
-        # 2. คำนวณการปรับขนาดเพื่อให้ภาพพอดีกับพื้นที่ Label โดยไม่บิดเบือนสัดส่วน
         img_h, img_w, _ = cv2image.shape
         label_w = self.video_label.winfo_width()
         label_h = self.video_label.winfo_height()
 
-        # ป้องกันการหารด้วยศูนย์
-        if label_w == 1 or label_h == 1: 
-             # ถ้า Label ยังไม่ได้เรนเดอร์ ให้ใช้ขนาดภาพเดิม (หรือขนาดเริ่มต้น)
+        if label_w <= 1 or label_h <= 1: 
              scale_factor = 1 
         else:
-             # คำนวณสเกลที่ต้องใช้ย่อ/ขยายเพื่อให้ภาพพอดีในพื้นที่ Label
              scale_factor = min(label_w / img_w, label_h / img_h)
 
         new_w = int(img_w * scale_factor)
         new_h = int(img_h * scale_factor)
         
-        # ปรับขนาดภาพ
         cv2image = cv2.resize(cv2image, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-        # 3. แปลงเป็นภาพที่ Tkinter เข้าใจ
         img = Image.fromarray(cv2image)
         self.photo = ImageTk.PhotoImage(image=img)
         
-        # 4. แสดงผล
         self.video_label.config(image=self.photo, text="")
-        self.video_label.image = self.photo # ป้องกัน GC
+        self.video_label.image = self.photo 
 
     # --- Loop สำหรับกล้อง ---
 
@@ -210,7 +228,10 @@ class FaceRecognitionApp:
                 
                 # คำนวณ FPS
                 new_frame_time = time.time()
-                fps = 1 / (new_frame_time - self.prev_frame_time)
+                try:
+                    fps = 1 / (new_frame_time - self.prev_frame_time)
+                except ZeroDivisionError:
+                    fps = 0
                 self.prev_frame_time = new_frame_time
                 cv2.putText(processed_frame, f"FPS: {int(fps)}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                 
@@ -219,10 +240,15 @@ class FaceRecognitionApp:
             
             # เรียกตัวเองซ้ำหลังจากหน่วงเวลา
             self._after_id = self.master.after(UPDATE_DELAY_MS, self.update_frame)
-        
+            
+    def on_close(self):
+        """ฟังก์ชันที่ถูกเรียกเมื่อผู้ใช้กดปิดหน้าต่าง"""
+        print("[INFO] Closing application...")
+        self.stop_camera() 
+        self.master.destroy() 
+
 if __name__ == "__main__":
     root = tk.Tk()
-    # กำหนดขนาดเริ่มต้นของหน้าต่างหลักให้ใหญ่ขึ้น
     root.geometry("1000x700") 
     app = FaceRecognitionApp(root)
     root.mainloop()
