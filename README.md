@@ -75,3 +75,11 @@ python main.py
 คลิก Start Camera → สำหรับ Real-time
 
 คลิก Upload Image → สำหรับทดสอบด้วยไฟล์ภาพ
+
+
+ก่อนเทรนโมเดล
+
+python add_face_cv.py Thinnakorn
+python train_model.py
+python main.py
+python main_gui.py
