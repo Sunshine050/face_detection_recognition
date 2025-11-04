@@ -30,12 +30,7 @@ else:
     print("[INFO] โหลดโมเดล LBPH สำเร็จ")
     print(f"[INFO] Loaded {len(id_to_name_map)} labels")
 
-# ------------------------------
-# ✅ ค่า threshold — ปรับได้ตามโมเดลของคุณ
-# ------------------------------
-# หมายเหตุ:
-# - ค่าต่ำ = แม่นยำ แต่จะ Unknown ง่าย
-# - ค่าสูง = ยอมให้คล้ายๆ ก็ถือว่าแมทช์
+
 DEFAULT_CONFIDENCE_THRESHOLD = 90
 
 
