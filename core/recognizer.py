@@ -36,7 +36,7 @@ else:
 # หมายเหตุ:
 # - ค่าต่ำ = แม่นยำ แต่จะ Unknown ง่าย
 # - ค่าสูง = ยอมให้คล้ายๆ ก็ถือว่าแมทช์
-DEFAULT_CONFIDENCE_THRESHOLD = 85
+DEFAULT_CONFIDENCE_THRESHOLD = 90
 
 
 def recognize_faces_lbph(frame, face_boxes, confidence_threshold=DEFAULT_CONFIDENCE_THRESHOLD):
