@@ -8,7 +8,7 @@ import os
 import sys
 
 from core.detector import detect_faces
-from dataset.Thinnakorn.recognizer import recognize_faces_lbph
+from core.recognizer import recognize_faces_lbph
 
 APP_TITLE = "Face Recognition Application (GUI)"
 CAMERA_ID = 0
